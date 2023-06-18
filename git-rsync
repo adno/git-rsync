@@ -90,16 +90,19 @@ function parse_args() {
                     -d | --diff)
                         if [[ -z "$diff" ]]; then
                             # Make sure -u overrides -d if both present
-                            diff='A \|M '
+                            diff='A |M '
+                            diff_desc='added or modified'
                         fi
                         shift
                         ;;
                     -u | --diff-untracked)
-                        diff='A \|M \|??'
+                        diff='A |M |\?\?'
+                        diff_desc='added, modified or untracked'
                         shift
                         ;;
                     *)
-                        err "Error: Unknown option $1.\n"
+                        err "Error: Unknown option $1."
+                        err ''
                         usage
                         raise
                         ;;
@@ -134,9 +137,9 @@ function main() {
     parse_args "$@"
 
     local mode src dst workdir remote_path remote_host remote_dir rsh \
-        ssh_cmd file_opt get_f
+        ssh_cmd file_opt get_excl_cmd get_files_cmd get_f
 
-    function remote_exec() {
+    function remote_eval() {
         # TODO We assume the remote repo to be synced when executing "git status".
         # The following doesn't seem to work (even if we run and forward ssh-agent…)
         # eval \$(ssh-agent -s)
@@ -151,16 +154,16 @@ echo "$OUT_END"
 _EOT_
     }
 
-
     mode="${argv[0]}"
     unset argv[0]
     workdir="$(git rev-parse --show-toplevel)" || raise
     remote_path="$(git config --local --get rsync.remote)" || \
         raise "Please set rsync.remote via git config."
     
+    get_files_cmd="git status --porcelain | sed -Ene 's/^($diff) //p'"    
     get_excl_cmd="git -C \"$workdir\" ls-files \
 --exclude-standard -oi --directory"
-    get_files_cmd="git status --porcelain | sed -ne 's/^\($diff\) //p'"    
+    remote_get_excl_cmd="git ls-files --exclude-standard -oi --directory"
 
     if rsh="$(git config --get rsync.rsh)"; then
         export RSYNC_RSH="$rsh"
@@ -170,10 +173,10 @@ _EOT_
             src="$workdir"
             dst="$remote_path"
             if [[ -n "$diff" ]]; then
-                function get_files() { $get_files_cmd; }
+                function get_files() { eval "$get_files_cmd"; }
                 get_f=1
             else
-                function get_excl() { $get_excl_cmd; }
+                function get_excl() { eval "$get_excl_cmd"; }
             fi
             ;;
         pull | pl )
@@ -189,10 +192,10 @@ _EOT_
                 ssh_cmd="ssh $remote_host"
             fi
             if [[ -n "$diff" ]]; then
-                function get_files() { remote_exec $get_files_cmd; }
+                function get_files() { remote_eval "$get_files_cmd"; }
                 get_f=1
             else
-                function get_excl() { remote_exec $get_excl_cmd; }
+                function get_excl() { remote_eval "$remote_get_excl_cmd"; }
             fi
             ;;
         * )
@@ -220,33 +223,37 @@ _EOT_
         get_files > "$files_or_excl_file"
         file_opt="--files-from=$files_or_excl_file"
     else
-        # TODO bug: this works locally even for pull, but should run on the remote
-        # server similarly to get_files.
         get_excl > "$files_or_excl_file"
         file_opt="--exclude-from=$files_or_excl_file"
     fi
 
-    # -a: archive
-    #   -r: recursive
-    #   -l: copy symlinks as symlinks
-    #   -p: preserve permissions
-    #   -t: preserve times
-    #   -g: preserve group
-    #   -o: preserve owner
-    #   --devices: preserve device files
-    #   --specials: preserve special files
-    # -c: skip based on checksum, not mod-time & size
-    # -h: output numbers in a human-readable format
-    # -u: skip files that are newer on the receiver
-    # -v: increase verbosity
-    # -z: compress file data during the transfer
-    # -P:
-    #   --progress: show progress during transfer
-    #   --partial: keep partially transferred files
-    rsync \
-        -achuvzP $dry_run \
-        "$file_opt" --exclude=".git" "${excludes[@]}" \
-        "$src/" "$dst"
+    if [[ -n "$get_f" ]] && ! [[ -s "$files_or_excl_file" ]] ; then
+        # Avoid running rsync unnecessarily:
+        err ''
+        err "Already up to date. No $diff_desc files found."
+    else
+        # -a: archive
+        #   -r: recursive
+        #   -l: copy symlinks as symlinks
+        #   -p: preserve permissions
+        #   -t: preserve times
+        #   -g: preserve group
+        #   -o: preserve owner
+        #   --devices: preserve device files
+        #   --specials: preserve special files
+        # -c: skip based on checksum, not mod-time & size
+        # -h: output numbers in a human-readable format
+        # -u: skip files that are newer on the receiver
+        # -v: increase verbosity
+        # -z: compress file data during the transfer
+        # -P:
+        #   --progress: show progress during transfer
+        #   --partial: keep partially transferred files
+        rsync \
+            -achuvzP $dry_run \
+            "$file_opt" --exclude=".git" "${excludes[@]}" \
+            "$src/" "$dst"
+    fi
 
     clear_files_or_excl_file
 }
