@@ -56,7 +56,7 @@ Examples:
   .. code:: bash
     
     % cd your_git_repository/
-    % git rsync push -u
+    % git rsync push
 
 - Sync added, modified, and untracked files since the last commit to the remote host:
 
