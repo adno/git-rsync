@@ -11,7 +11,7 @@ function usage() {
     cat << _EOT_ >&2
 git-rsync v0.0.1
 
-Usage: $(basename $0) [-n] [-x <pattern>] <command>
+Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
   Synchronize the git repository via rsync.
 
@@ -30,9 +30,14 @@ Options:
   -n          Dry run.
   -x <pattern>
               Exclude files matching <pattern>.
+  -d
+              Git diff mode: push or pull new/modified files since the last
+              commit.
 
 Arguments:
   <command>   push, pull
+  [files]     Push or pull individual files instead of the whole repository.
+              (Cannot be used with -d.)
 
 _EOT_
 }
@@ -70,6 +75,9 @@ function parse_args() {
                 elif [[ "$1" =~ "x" ]]; then
                     excludes=("${excludes[@]}" "--exclude=$2")
                     shift 2
+                elif [[ "$1" =~ "d" ]]; then
+                    diff="-d"
+                    shift
                 else
                     shift
                 fi
@@ -82,16 +90,19 @@ function parse_args() {
         esac
     done
 
-    if [[ $argc -lt 1 ]] || [[ $argc -gt 2 ]]; then
+    if [[ $argc -lt 1 ]]; then
         usage
         raise
     fi
 }
 
-function clear_excludes_file() {
-    rm -f "$excludes_file"
+function clear_files_or_excl_file() {
+    rm -f "$files_or_excl_file"
 }
 
+# Just unlikely strings that we use to delimit diff output:
+DIFF_START='__git-rsync-diff-start-66334fff74fe1acf081ab594a331f86a__'
+DIFF_END='__git-rsync-diff-end-66334fff74fe1acf081ab594a331f86a__'
 
 function main() {
     check_cmd git
@@ -99,9 +110,10 @@ function main() {
 
     parse_args "$@"
 
-    local mode workdir remote_path rsh_cmd
+    local mode workdir remote_path remote_host remote_dir ssh_cmd file_opt get_f
 
     mode="${argv[0]}"
+    unset argv[0]
     workdir="$(git rev-parse --show-toplevel)" || raise
     remote_path="$(git config --local --get rsync.remote)" || \
         raise "Please set rsync.remote via git config."
@@ -114,26 +126,76 @@ function main() {
         push | ps )
             local src="$workdir"
             local dst="$remote_path"
+            if [[ -n "$diff" ]]; then
+                function get_files() {
+                    git --no-pager diff --name-only --diff-filter=AM
+                }
+                get_f=1
+            fi
             ;;
         pull | pl )
             local src="$remote_path"
             local dst="$workdir"
+            if [[ -n "$diff" ]]; then
+                # TODO TODO does not work correctly
+                remote_host="${remote_path%:*}"
+                if [[ "$remote_host" != "$remote_path" ]]; then
+                    remote_dir="${remote_path#*:}"
+                fi
+                if [[ "${_rsh#ssh }" != "$_rsh" ]]; then
+                    ssh_cmd="$_rsh $remote_host"
+                else
+                    ssh_cmd="ssh $remote_host"
+                fi
+                function get_files() {
+                    $(echo $ssh_cmd) -t \
+                        << _EOT_ | awk "/^${DIFF_START}\$/{flag=1; next} \
+/^$DIFF_END\$/{flag=0} flag"
+cd $remote_dir
+echo "$DIFF_START"
+git --no-pager diff --name-only --diff-filter=AM
+echo "$DIFF_END"
+_EOT_
+                }
+                get_f=1
+            fi
             ;;
         * )
             usage
             raise
             ;;
     esac
+    
+    if [[ "${#argv[@]}" != 0 ]]; then
+        if [[ -n "$get_f" ]]; then
+            raise "Cannot use -d (diff) together with filenames after push|pull."
+        fi
+        function get_files() {
+            for f in "${argv[@]}"; do
+                echo "$f"
+            done
+        }                
+        get_f=1
+    fi
 
-    excludes_file="$(mktemp)"
-    trap clear_excludes_file 0 2 9 15
-    git \
-        -C "$workdir" \
-        ls-files \
-        --exclude-standard \
-        -oi \
-        --directory \
-        > "$excludes_file"
+    
+    files_or_excl_file="$(mktemp)"
+    trap clear_files_or_excl_file 0 2 9 15
+    if [[ -n "$get_f" ]]; then
+        get_files > "$files_or_excl_file"
+        file_opt="--files-from=$files_or_excl_file"
+    else
+        # TODO bug: this works locally even for pull, but should run on the remote
+        # sever similarly to get_files
+        git \
+            -C "$workdir" \
+            ls-files \
+            --exclude-standard \
+            -oi \
+            --directory \
+            > "$files_or_excl_file"
+        file_opt="--exclude-from=$files_or_excl_file"
+    fi
 
     # -a: archive
     #   -r: recursive
@@ -154,10 +216,10 @@ function main() {
     #   --partial: keep partially transferred files
     rsync \
         -achuvzP $dry_run \
-        --exclude-from="$excludes_file" --exclude=".git" "${excludes[@]}" \
+        "$file_opt" --exclude=".git" "${excludes[@]}" \
         "$src/" "$dst"
 
-    clear_excludes_file
+    clear_files_or_excl_file
 }
 
 main "$@"
