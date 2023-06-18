@@ -24,7 +24,7 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
     git config --local rsync.rsh "ssh -i <indentity_file> -l <login_name>"
 
-  Exclude files are set by .gitignore.
+  Excluded files are set automatically by .gitignore.
 
 Options:
   -n, --dry-run
@@ -32,8 +32,11 @@ Options:
   -x, --exclude <pattern>
               Exclude files matching <pattern>.
   -d, --diff
-              Git diff mode: push or pull new/modified files since the last
+              Git diff mode: push or pull added/modified files since the last
               commit.
+  -u, --diff-untracked
+              Git diff+untracked mode: push or pull added+modified+untracked
+              files since the last commit.
 
 Arguments:
   <command>   push, pull
@@ -81,7 +84,14 @@ function parse_args() {
                         shift 2
                         ;;
                     -d | --diff)
-                        diff="-d"
+                        if [[ -z "$diff" ]]; then
+                            # Make sure -u overrides -d if both present
+                            diff='A \|M '
+                        fi
+                        shift
+                        ;;
+                    -u | --diff-untracked)
+                        diff='A \|M \|??'
                         shift
                         ;;
                     *)
@@ -119,7 +129,7 @@ function main() {
 
     parse_args "$@"
 
-    local mode workdir remote_path remote_host remote_dir ssh_cmd file_opt get_f
+    local mode workdir remote_path remote_host remote_dir rsh ssh_cmd file_opt get_f
 
     mode="${argv[0]}"
     unset argv[0]
@@ -127,17 +137,16 @@ function main() {
     remote_path="$(git config --local --get rsync.remote)" || \
         raise "Please set rsync.remote via git config."
 
-    if _rsh="$(git config --get rsync.rsh)"; then
-        export RSYNC_RSH="$_rsh"
+    if rsh="$(git config --get rsync.rsh)"; then
+        export RSYNC_RSH="$rsh"
     fi
-
     case $mode in
         push | ps )
             local src="$workdir"
             local dst="$remote_path"
             if [[ -n "$diff" ]]; then
                 function get_files() {
-                    git --no-pager diff --name-only --diff-filter=AM
+                    git status --porcelain | sed -ne "s/^\($diff\) //p"
                 }
                 get_f=1
             fi
@@ -146,23 +155,24 @@ function main() {
             local src="$remote_path"
             local dst="$workdir"
             if [[ -n "$diff" ]]; then
-                # TODO TODO does not work correctly
                 remote_host="${remote_path%:*}"
                 if [[ "$remote_host" != "$remote_path" ]]; then
                     remote_dir="${remote_path#*:}"
                 fi
-                if [[ "${_rsh#ssh }" != "$_rsh" ]]; then
-                    ssh_cmd="$_rsh $remote_host"
+                if [[ "${rsh#ssh }" != "$rsh" ]]; then
+                    ssh_cmd="$rsh $remote_host"
                 else
                     ssh_cmd="ssh $remote_host"
                 fi
                 function get_files() {
-                    $(echo $ssh_cmd) -t \
-                        << _EOT_ | awk "/^${DIFF_START}\$/{flag=1; next} \
-/^$DIFF_END\$/{flag=0} flag"
+                    ($ssh_cmd -t  | awk "/^${DIFF_START}\$/{flag=1; next} \
+/^$DIFF_END\$/{flag=0} flag") << _EOT_
 cd $remote_dir
+# TODO DOES NOT WORK
+#eval \$(ssh-agent -s)
+#git pull
 echo "$DIFF_START"
-git --no-pager diff --name-only --diff-filter=AM
+git status --porcelain | sed -ne "s/^\($diff\) //p"
 echo "$DIFF_END"
 _EOT_
                 }
