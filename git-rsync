@@ -27,10 +27,11 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
   Exclude files are set by .gitignore.
 
 Options:
-  -n          Dry run.
-  -x <pattern>
+  -n, --dry-run
+              Dry run.
+  -x, --exclude <pattern>
               Exclude files matching <pattern>.
-  -d
+  -d, --diff
               Git diff mode: push or pull new/modified files since the last
               commit.
 
@@ -66,21 +67,29 @@ function parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -*)
-                if [[ "$1" =~ "h" ]]; then
-                    usage
-                    exit
-                elif [[ "$1" =~ "n" ]]; then
-                    dry_run="-n"
-                    shift
-                elif [[ "$1" =~ "x" ]]; then
-                    excludes=("${excludes[@]}" "--exclude=$2")
-                    shift 2
-                elif [[ "$1" =~ "d" ]]; then
-                    diff="-d"
-                    shift
-                else
-                    shift
-                fi
+                case "$1" in
+                    -h | --help)
+                        usage
+                        exit
+                        ;;
+                    -n | --dry-run)
+                        dry_run="-n"
+                        shift
+                        ;;
+                    -x | --exclude)
+                        excludes=("${excludes[@]}" "--exclude=$2")
+                        shift 2
+                        ;;
+                    -d | --diff)
+                        diff="-d"
+                        shift
+                        ;;
+                    *)
+                        echo "Error: Unknown option $1.\n" >&2
+                        usage
+                        raise
+                        ;;
+                esac
                 ;;
             *)
                 ((++argc))
@@ -168,7 +177,7 @@ _EOT_
     
     if [[ "${#argv[@]}" != 0 ]]; then
         if [[ -n "$get_f" ]]; then
-            raise "Cannot use -d (diff) together with filenames after push|pull."
+            raise "Cannot use -d (diff) together with filename arguments for push|pull."
         fi
         function get_files() {
             for f in "${argv[@]}"; do
