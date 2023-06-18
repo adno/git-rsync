@@ -37,11 +37,12 @@ Options:
               Dry run.
   -x, --exclude <pattern>
               Exclude files matching <pattern>.
-  -d, --diff  Git diff mode: push or pull added and modified files since the last
-              commit.
-  -u, --diff-untracked, --update
-              Git diff+untracked mode: push or pull added, modified, and untracked
-              files since the last commit.
+  -s, --staged, -c, --cached
+              Push or pull added and modified files staged for commit
+              (mimicks output "git diff --cached").
+  -u, --update
+              Push or pull added, modified, and untracked files since the last commit
+              (mimicks "git status").
 
 Arguments:
   <command>   push, pull
@@ -88,16 +89,16 @@ function parse_args() {
                         excludes=("${excludes[@]}" "--exclude=$2")
                         shift 2
                         ;;
-                    -d | --diff)
+                    -s | --staged | -c | --cached)
                         if [[ -z "$diff" ]]; then
-                            # Make sure -u overrides -d if both present
-                            diff='A |M '
-                            diff_desc='added or modified'
+                            # Make sure -u overrides -s if both present
+                            diff='[AM] '
+                            diff_desc='staged added or modified'
                         fi
                         shift
                         ;;
-                    -u | --diff-untracked | --update)
-                        diff='A |M |\?\?'
+                    -u | --update)
+                        diff='[AM] | [AM]|\?\?'
                         diff_desc='added, modified or untracked'
                         shift
                         ;;
