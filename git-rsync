@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Copyright (c) 2021 Hiroyuki Deguchi
+# Copyright (c) 2023 Adam Nohejl
 #
 # This software is released under the MIT License.
 # http://opensource.org/licenses/mit-license.php
@@ -9,7 +10,7 @@ set -e
 
 function usage() {
     cat << _EOT_ >&2
-git-rsync v0.0.1
+git-rsync v0.0.2 (adno)
 
 Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
@@ -36,10 +37,10 @@ Options:
               Dry run.
   -x, --exclude <pattern>
               Exclude files matching <pattern>.
-  -d, --diff  Git diff mode: push or pull added/modified files since the last
+  -d, --diff  Git diff mode: push or pull added and modified files since the last
               commit.
-  -u, --diff-untracked
-              Git diff+untracked mode: push or pull added+modified+untracked
+  -u, --diff-untracked, --update
+              Git diff+untracked mode: push or pull added, modified, and untracked
               files since the last commit.
 
 Arguments:
@@ -95,7 +96,7 @@ function parse_args() {
                         fi
                         shift
                         ;;
-                    -u | --diff-untracked)
+                    -u | --diff-untracked | --update)
                         diff='A |M |\?\?'
                         diff_desc='added, modified or untracked'
                         shift

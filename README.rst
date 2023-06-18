@@ -1,18 +1,20 @@
 git-rsync
 #########
 
+This fork adds features to the original [git-rsync](https://github.com/de9uch1/git-rsync) by [de9uch1](https://github.com/de9uch1).
+
 Installation
 ============
 
-Clone the repository and create the symlink in a directory where PATH is given.
+Clone the repository and create the symlink in a directory contained in the PATH variable.
 
 .. code:: bash
 
-   % git clone https://github.com/de9uch1/git-rsync.git
+   % git clone https://github.com/adno/git-rsync.git
    % cd git-rsync/
    % ln -s $(pwd)/git-rsync ~/.local/bin/
 
-If you use Bash, add a direcotry to :code:`PATH` by the following:
+If you use Bash, add the direcotry to :code:`PATH` by the following:
 
 .. code:: bash
 
@@ -40,18 +42,36 @@ If you want to sepecify the identity file or the login name, set :code:`rsync.rs
 Usage
 =====
 
-It is simple to use.
+Examples:
+
+- Sync whole repository from the remote host:
+
+	.. code:: bash
+	   % cd your_git_repository/
+	   % git rsync pull
+   
+- Sync whole repository to the remote host:
+
+	.. code:: bash
+	   % cd your_git_repository/
+	   % git rsync push -u
+
+- Sync added, modified, and untracked files since the last commit to the remote host:
+
+	.. code:: bash
+	   % cd your_git_repository/
+	   % git rsync push -u
+
+- Check which files will be transferred, without actually syncing, with the `-n` option:
 
 .. code:: bash
 
-   % cd your_git_repository/
-   % git rsync push
+   % git rsync push -n
 
-It can be checked files will be transferred with :code:`-n` option.
+Full help:
 
-.. code:: bash
-
-   % git rsync -n push
+	.. code:: bash
+	   % git rsync -h
 
 Note that exclude files are set by :code:`.gitignore`.
 
