@@ -85,7 +85,7 @@ function parse_args() {
                         shift
                         ;;
                     *)
-                        echo "Error: Unknown option $1.\n" >&2
+                        err "Error: Unknown option $1.\n"
                         usage
                         raise
                         ;;
