@@ -24,15 +24,19 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
     git config --local rsync.rsh "ssh -i <indentity_file> -l <login_name>"
 
-  Excluded files are set automatically by .gitignore.
+  Excluded files are set automatically by .gitignore (unless individual
+  file arguments are supplied).
+  
+  If the command is "pull", the ignored files or diff/untracked files are
+  queried from the remote host over SSH (which may result in an additional
+  password prompt).
 
 Options:
   -n, --dry-run
               Dry run.
   -x, --exclude <pattern>
               Exclude files matching <pattern>.
-  -d, --diff
-              Git diff mode: push or pull added/modified files since the last
+  -d, --diff  Git diff mode: push or pull added/modified files since the last
               commit.
   -u, --diff-untracked
               Git diff+untracked mode: push or pull added+modified+untracked
@@ -41,7 +45,7 @@ Options:
 Arguments:
   <command>   push, pull
   [files]     Push or pull individual files instead of the whole repository.
-              (Cannot be used with -d.)
+              (Cannot be used with -d or -u.)
 
 _EOT_
 }
@@ -119,9 +123,9 @@ function clear_files_or_excl_file() {
     rm -f "$files_or_excl_file"
 }
 
-# Just unlikely strings that we use to delimit diff output:
-DIFF_START='__git-rsync-diff-start-66334fff74fe1acf081ab594a331f86a__'
-DIFF_END='__git-rsync-diff-end-66334fff74fe1acf081ab594a331f86a__'
+# Just unlikely strings that we use to delimit remote command output:
+OUT_START='__git-rsync-remote-output-start-66334fff74fe1acf081ab594a331f86a__'
+OUT_END='__git-rsync-remote-output-end-66334fff74fe1acf081ab594a331f86a__'
 
 function main() {
     check_cmd git
@@ -129,54 +133,66 @@ function main() {
 
     parse_args "$@"
 
-    local mode workdir remote_path remote_host remote_dir rsh ssh_cmd file_opt get_f
+    local mode src dst workdir remote_path remote_host remote_dir rsh \
+        ssh_cmd file_opt get_f
+
+    function remote_exec() {
+        # TODO We assume the remote repo to be synced when executing "git status".
+        # The following doesn't seem to work (even if we run and forward ssh-agent…)
+        # eval \$(ssh-agent -s)
+        # git pull
+        local cmd="$*"
+        ($ssh_cmd -t | awk "/^${OUT_START}\$/{flag=1; next} \
+/^$OUT_END\$/{flag=0} flag") << _EOT_
+cd $remote_dir
+echo "$OUT_START"
+$cmd
+echo "$OUT_END"
+_EOT_
+    }
+
 
     mode="${argv[0]}"
     unset argv[0]
     workdir="$(git rev-parse --show-toplevel)" || raise
     remote_path="$(git config --local --get rsync.remote)" || \
         raise "Please set rsync.remote via git config."
+    
+    get_excl_cmd="git -C \"$workdir\" ls-files \
+--exclude-standard -oi --directory"
+    get_files_cmd="git status --porcelain | sed -ne 's/^\($diff\) //p'"    
 
     if rsh="$(git config --get rsync.rsh)"; then
         export RSYNC_RSH="$rsh"
     fi
     case $mode in
         push | ps )
-            local src="$workdir"
-            local dst="$remote_path"
+            src="$workdir"
+            dst="$remote_path"
             if [[ -n "$diff" ]]; then
-                function get_files() {
-                    git status --porcelain | sed -ne "s/^\($diff\) //p"
-                }
+                function get_files() { $get_files_cmd; }
                 get_f=1
+            else
+                function get_excl() { $get_excl_cmd; }
             fi
             ;;
         pull | pl )
-            local src="$remote_path"
-            local dst="$workdir"
+            src="$remote_path"
+            dst="$workdir"
+            remote_host="${remote_path%:*}"
+            if [[ "$remote_host" != "$remote_path" ]]; then
+                remote_dir="${remote_path#*:}"
+            fi
+            if [[ "${rsh#ssh }" != "$rsh" ]]; then
+                ssh_cmd="$rsh $remote_host"
+            else
+                ssh_cmd="ssh $remote_host"
+            fi
             if [[ -n "$diff" ]]; then
-                remote_host="${remote_path%:*}"
-                if [[ "$remote_host" != "$remote_path" ]]; then
-                    remote_dir="${remote_path#*:}"
-                fi
-                if [[ "${rsh#ssh }" != "$rsh" ]]; then
-                    ssh_cmd="$rsh $remote_host"
-                else
-                    ssh_cmd="ssh $remote_host"
-                fi
-                function get_files() {
-                    ($ssh_cmd -t  | awk "/^${DIFF_START}\$/{flag=1; next} \
-/^$DIFF_END\$/{flag=0} flag") << _EOT_
-cd $remote_dir
-# TODO DOES NOT WORK
-#eval \$(ssh-agent -s)
-#git pull
-echo "$DIFF_START"
-git status --porcelain | sed -ne "s/^\($diff\) //p"
-echo "$DIFF_END"
-_EOT_
-                }
+                function get_files() { remote_exec $get_files_cmd; }
                 get_f=1
+            else
+                function get_excl() { remote_exec $get_excl_cmd; }
             fi
             ;;
         * )
@@ -184,6 +200,7 @@ _EOT_
             raise
             ;;
     esac
+    
     
     if [[ "${#argv[@]}" != 0 ]]; then
         if [[ -n "$get_f" ]]; then
@@ -196,7 +213,6 @@ _EOT_
         }                
         get_f=1
     fi
-
     
     files_or_excl_file="$(mktemp)"
     trap clear_files_or_excl_file 0 2 9 15
@@ -205,14 +221,8 @@ _EOT_
         file_opt="--files-from=$files_or_excl_file"
     else
         # TODO bug: this works locally even for pull, but should run on the remote
-        # sever similarly to get_files
-        git \
-            -C "$workdir" \
-            ls-files \
-            --exclude-standard \
-            -oi \
-            --directory \
-            > "$files_or_excl_file"
+        # server similarly to get_files.
+        get_excl > "$files_or_excl_file"
         file_opt="--exclude-from=$files_or_excl_file"
     fi
 
