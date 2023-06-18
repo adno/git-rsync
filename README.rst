@@ -1,7 +1,7 @@
 git-rsync
 #########
 
-This fork adds features to the original [git-rsync](https://github.com/de9uch1/git-rsync) by [de9uch1](https://github.com/de9uch1).
+This fork adds features to the original `git-rsync <https://github.com/de9uch1/git-rsync>`_ by `de9uch1 <https://github.com/de9uch1>`_, namely syncing only updated files or files specified as arguments.
 
 Installation
 ============
@@ -46,34 +46,38 @@ Examples:
 
 - Sync whole repository from the remote host:
 
-	.. code:: bash
-	   % cd your_git_repository/
-	   % git rsync pull
+  .. code:: bash
+  
+     % cd your_git_repository/
+     % git rsync pull
    
 - Sync whole repository to the remote host:
 
-	.. code:: bash
-	   % cd your_git_repository/
-	   % git rsync push -u
+  .. code:: bash
+    
+    % cd your_git_repository/
+    % git rsync push -u
 
 - Sync added, modified, and untracked files since the last commit to the remote host:
 
-	.. code:: bash
-	   % cd your_git_repository/
-	   % git rsync push -u
+  .. code:: bash
+  
+     % cd your_git_repository/
+     % git rsync push -u
 
-- Check which files will be transferred, without actually syncing, with the `-n` option:
+- Check which files will be transferred, without actually syncing, with the :code:`-n` option:
 
-.. code:: bash
-
-   % git rsync push -n
+  .. code:: bash
+  
+     % git rsync push -n
 
 Full help:
 
-	.. code:: bash
-	   % git rsync -h
+.. code:: bash
+  
+   % git rsync -h
 
-Note that exclude files are set by :code:`.gitignore`.
+Note that excluded files are set by :code:`.gitignore`.
 
 License
 =======
