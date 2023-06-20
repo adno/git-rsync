@@ -43,6 +43,9 @@ Options:
   -u, --update
               Push or pull added, modified, and untracked files since the
               last commit (mimicks "git status").
+  -f, --force
+              Force overwrite newer files. (By default files that are
+              newer on the receiver are skipped during sync.)
 
 Arguments:
   <command>   push, pull
@@ -74,6 +77,7 @@ function parse_args() {
     argc=0
     argv=()
     excludes=()
+    u_opt='u'
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -*)
@@ -101,6 +105,11 @@ function parse_args() {
                     -u | --update)
                         diff='[AM] | [AM]|\?\?'
                         diff_desc='added, modified or untracked'
+                        shift
+                        ;;
+                    -f | --force)
+                        # Disable the -u option:
+                        u_opt=''
                         shift
                         ;;
                     *)
@@ -255,7 +264,7 @@ _EOT_
         #   --progress: show progress during transfer
         #   --partial: keep partially transferred files
         rsync \
-            -achuvzP $dry_run $recursive \
+            -ach${u_opt}vzP $dry_run $recursive \
             "$file_opt" --exclude=".git" "${excludes[@]}" \
             "$src/" "$dst"
     fi

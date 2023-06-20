@@ -122,6 +122,9 @@ Note: Options (e.g. :code:`-u` or :code:`-n`) and commands (:code:`push` and :co
      -u, --update
                  Push or pull added, modified, and untracked files since the
                  last commit (mimicks "git status").
+     -f, --force
+                 Force overwrite newer files. (By default files that are
+                 newer on the receiver are skipped during sync.)
    
    Arguments:
      <command>   push, pull
