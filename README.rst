@@ -13,6 +13,8 @@ This fork adds features to the original `git-rsync <https://github.com/de9uch1/g
 Installation
 ============
 
+You only need to place the git-rsync file in your :code:`PATH` and make sure it's exacutable. Here is one way to do that:
+
 Clone the repository and create the symlink in a directory contained in the PATH variable.
 
 .. code:: bash
@@ -31,7 +33,7 @@ If you use Bash, add the direcotry to :code:`PATH` by the following:
 Setup
 =====
 
-All configurations are set via :code:`git config`.
+All options are set via :code:`git config`.
 
 The remote host and path are set by :code:`rsync.remote`.
 
@@ -81,6 +83,8 @@ This tool syncs repositories A and B (the one on the local host and the one on t
   .. code:: bash
   
      % git rsync push -n
+
+Note: Options (e.g. :code:`-u` or :code:`-n`) and commands (:code:`push` and :code:`pull`) are fully orthogonal.
 
 **Full help:**
 
