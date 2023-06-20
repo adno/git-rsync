@@ -51,7 +51,7 @@ Usage
 
 This tool syncs repositories A and B (the one on the local host and the one on the remote host), which typically have the same "remote repository" (in git terminology) C. We do not interact with C in any way.
 
-Examples:
+**Examples:**
 
 - Sync (pull) the whole repository from the remote host:
 
@@ -82,13 +82,49 @@ Examples:
   
      % git rsync push -n
 
-Full help:
+**Full help:**
 
-.. code:: bash
+.. code::
   
    % git rsync -h
-
-Note that excluded files are set by :code:`.gitignore`.
+   Usage: git-rsync [-n] [-x <pattern>] <command> [files]
+   
+     Synchronize the git repository via rsync.
+   
+     Remote host and path are set via git config, like this:
+   
+       git config --local rsync.remote your_remote_host:/path/to/remote/repo
+   
+     If you transfer files via the SSH connection, it can be load the SSH
+     config / SSH agent, or specify the login name and private key, like this:
+   
+       git config --local rsync.rsh "ssh -i <indentity_file> -l <login_name>"
+   
+     Excluded files are set automatically by .gitignore (unless individual
+     file arguments are supplied).
+     
+     If the command is "pull", the ignored files or diff/untracked files are
+     queried from the remote host over SSH (which may result in an additional
+     password prompt).
+   
+   Options:
+     -n, --dry-run
+                 Dry run.
+     -x, --exclude <pattern>
+                 Exclude files matching <pattern>.
+     -s, --staged, -c, --cached
+                 Push or pull added and modified files staged for commit
+                 (mimicks output "git diff --cached").
+     -u, --update
+                 Push or pull added, modified, and untracked files since the
+                 last commit (mimicks "git status").
+   
+   Arguments:
+     <command>   push, pull
+     [files]     Push or pull individual files instead of the whole repository.
+                 If directories are supplied, sync them recursively. Honors -x,
+                 ignores .gitignore, and cannot be used with -d or -u.
+   
 
 License
 =======
