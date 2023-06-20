@@ -41,13 +41,14 @@ Options:
               Push or pull added and modified files staged for commit
               (mimicks output "git diff --cached").
   -u, --update
-              Push or pull added, modified, and untracked files since the last commit
-              (mimicks "git status").
+              Push or pull added, modified, and untracked files since the
+              last commit (mimicks "git status").
 
 Arguments:
   <command>   push, pull
   [files]     Push or pull individual files instead of the whole repository.
-              (Cannot be used with -d or -u.)
+              If directories are supplied, sync them recursively. Honors -x,
+              ignores .gitignore, and cannot be used with -d or -u.
 
 _EOT_
 }
@@ -139,7 +140,7 @@ function main() {
     parse_args "$@"
 
     local mode src dst workdir remote_path remote_host remote_dir rsh \
-        ssh_cmd file_opt get_excl_cmd get_files_cmd get_f
+        ssh_cmd file_opt get_excl_cmd get_files_cmd get_f recursive
 
     function remote_eval() {
         # TODO We assume the remote repo to be synced when executing "git status".
@@ -217,6 +218,8 @@ _EOT_
             done
         }                
         get_f=1
+        # --files-from turns off -r ("recursive", implied by -a) by default
+        recursive='-r'
     fi
     
     files_or_excl_file="$(mktemp)"
@@ -235,7 +238,7 @@ _EOT_
         err "Already up to date. No $diff_desc files found."
     else
         # -a: archive
-        #   -r: recursive
+        #   -r: recursive (except with --files-from)
         #   -l: copy symlinks as symlinks
         #   -p: preserve permissions
         #   -t: preserve times
@@ -252,7 +255,7 @@ _EOT_
         #   --progress: show progress during transfer
         #   --partial: keep partially transferred files
         rsync \
-            -achuvzP $dry_run \
+            -achuvzP $dry_run $recursive \
             "$file_opt" --exclude=".git" "${excludes[@]}" \
             "$src/" "$dst"
     fi
