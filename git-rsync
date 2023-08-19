@@ -9,6 +9,10 @@
 set -e
 
 function usage() {
+    if [[ -n "$1" ]]; then
+        err "$1"
+        err ''
+    fi
     cat << _EOT_ >&2
 git-rsync v0.0.2 (adno)
 
@@ -73,6 +77,91 @@ function check_cmd() {
     fi
 }
 
+# The following are regexes:
+SHORT_OPTS='^[hnxscuf]$'
+LONG_OPTS='^--(help|dry-run|exclude|staged|cached|update|force)$'
+SHORT_OPTS_WITH_ARG='^x$'
+LONG_OPTS_WITH_ARG='^--exclude$'
+CMDS='^(push|pull|ps|pl)$'
+
+# TODO parse/check options including strings of single-letter
+# function parse_args() {
+#     local opt opt_info cmd i
+#     args=()
+#     while [[ $# -gt 0 ]]; do
+#         case "$1" in
+#             --*)
+#                 if [[ "$1" =~ '=' ]]; then
+#                     opt="${1%%=*}"
+#                     if ! [[ "$opt" =~ $LONG_OPTS_WITH_ARG ]]; then
+#                         usage "Unexpected = (argument) after $opt."
+#                         exit 1
+#                     fi
+#                     args=("${args[@]}" "$opt" "${1#*=}")
+#                     shift 1
+#                 elif [[ "$1" =~ $LONG_OPTS_WITH_ARG ]]; then
+#                     if [[ $# -lt 2 ]]; then
+#                         usage "Missing argument after option $1."
+#                     fi
+#                     args=("${args[@]}" "$1" "$2")
+#                     shift 2                    
+#                 elif [[ "$1" =~ $LONG_OPTS ]]; then
+#                     args=("${args[@]}" "$1")
+#                     shift 1
+#                 else
+#                     usage "Unknown long option $1."
+#                     exit 1
+#                 fi
+#                 ;;
+#             -*)
+#                 if [[ ${#1} -gt 2 ]]; then
+#                     opt_info=" in $1"
+#                 else
+#                     opt_info=''
+#                 fi
+#                 for (( i=1; i<${#1}; i++ )); do
+#                     opt="${1:$i:1}"
+#                     echo "opt $opt"
+#                     if ! [[ "$opt" =~ $SHORT_OPTS ]]; then
+#                         usage "Unknown short option -$opt$opt_info."
+#                         exit 1
+#                     elif [[ "$opt" =~ $SHORT_OPTS_WITH_ARG ]]; then
+#                         arg="${1:$(($i+1)):1}"
+#                         if [[ -n "$arg" ]]; then
+#                             args=("${args[@]}" "-$opt" "$arg")
+#                         else
+#                             if [[ $# -lt 2 ]]; then
+#                                 usage "Missing argument after option -$opt$opt_info."
+#                                 exit 1
+#                             fi
+#                             args=("${args[@]}" "-$opt" "$2")
+#                             shift 1
+#                         fi
+#                         break
+#                     else
+#                         echo "args += opt $opt"
+#                         args=("${args[@]}" "-$opt")
+#                     fi
+#                 done
+#                 shift 1
+#                 ;;
+#             *)
+#                 # Ensure the first non-option arguments is a command:
+#                 if [[ -z "$cmd" ]]; then
+#                     if ! [[ "$1" =~ $CMDS ]]; then
+#                         usage "Invalid command $1."
+#                         exit 1
+#                     fi
+#                     cmd="$1"
+#                 fi
+#                 args=("${args[@]}" "$1")
+#                 shift 1
+#                 ;;
+#         esac
+#     done
+# }
+
+
 function parse_args() {
     argc=0
     argv=()
@@ -113,10 +202,8 @@ function parse_args() {
                         shift
                         ;;
                     *)
-                        err "Error: Unknown option $1."
-                        err ''
-                        usage
-                        raise
+                        usage "Unknown option $1."
+                        exit 1
                         ;;
                 esac
                 ;;
@@ -219,7 +306,8 @@ _EOT_
     
     if [[ "${#argv[@]}" != 0 ]]; then
         if [[ -n "$get_f" ]]; then
-            raise "Cannot use -d (diff) together with filename arguments for push|pull."
+            raise "Cannot use --staged/--update together with filename arguments for \
+push|pull."
         fi
         function get_files() {
             for f in "${argv[@]}"; do
