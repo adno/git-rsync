@@ -1,0 +1,4 @@
+2023-10-20
+- debug one-letter options
+- [files] args are relative to repository, not current dir, OK?
+- why "Pseudo-terminal will not be allocated because stdin is not a terminal."
