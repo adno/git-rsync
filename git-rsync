@@ -20,7 +20,8 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
   Synchronize the git repository via rsync.
 
-  Remote host and path are set via git config, like this:
+  Remote host and path are set via git config. Local (per-repository)
+  configuration can be done in the following way:
 
     git config --local rsync.remote your_remote_host:/path/to/remote/repo
 
@@ -28,6 +29,15 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
   config / SSH agent, or specify the login name and private key, like this:
 
     git config --local rsync.rsh "ssh -i <indentity_file> -l <login_name>"
+
+  To configure globally (per user), without repository specific settings use:
+  
+    git config --global rsync.remoteprefix your_remote_host:/pathprefix
+    git config --global rsync.rsh "ssh -i <indentity_file> -l <login_name>"
+
+  The remote path is then composed as rsync.remoteprefix/local_repo_name.
+  Only the last component of the local repo path is used as local_repo_name.
+  A local rsync.remote setting overrides any rsync.remoteprefix setting.
 
   Excluded files are set automatically by .gitignore (unless individual
   file arguments are supplied).
@@ -255,9 +265,28 @@ _EOT_
 
     mode="${argv[0]}"
     unset argv[0]
-    workdir="$(git rev-parse --show-toplevel)" || raise
-    remote_path="$(git config --local --get rsync.remote)" || \
-        raise "Please set rsync.remote via git config."
+    workdir="$(git rev-parse --show-toplevel)" || raise "Cannot get workdir."
+    if remote_path="$(git config --local --get rsync.remote)"; then
+        # Safety check:
+        if [ -z "$remote_path" ]; then
+            raise "Git config rsync.remote set but empty."
+        fi
+    else
+        if ! remote_prefix="$(git config --get rsync.remoteprefix)"; then
+            raise "Please set rsync.remote or rsync.remoteprefix via git config."
+        fi
+        # Safety check:
+        if [ -z "$remote_prefix" ]; then    
+            raise "Git config rsync.remoteprefix set but empty."
+        fi
+        # Remove trailing '/' if present:
+        if [ "${remote_prefix}" != "${remote_prefix%/}" ]; then    
+            remote_prefix="${remote_prefix%/}"
+        fi
+        repo_name="${workdir##*/}"
+        remote_path="${remote_prefix}/${repo_name}"
+    fi
+    
     
     get_files_cmd="git status --porcelain | sed -Ene 's/^($diff) //p'"    
     get_excl_cmd="git -C \"$workdir\" ls-files \
