@@ -48,6 +48,8 @@ If you want to sepecify the identity file or the login name, set :code:`rsync.rs
 
    % git config --local rsync.rsh "ssh -i ~/.ssh/id_rsa -l your_login_name"
 
+TODO add info about remoteprefix (see builtin help).
+
 Usage
 =====
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Copyright (c) 2021 Hiroyuki Deguchi
-# Copyright (c) 2023 Adam Nohejl
+# Copyright (c) 2023-4 Adam Nohejl
 #
 # This software is released under the MIT License.
 # http://opensource.org/licenses/mit-license.php
@@ -14,7 +14,7 @@ function usage() {
         err ''
     fi
     cat << _EOT_ >&2
-git-rsync v0.0.2 (adno)
+git-rsync v0.0.3 (adno)
 
 Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
