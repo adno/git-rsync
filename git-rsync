@@ -8,15 +8,16 @@
 
 set -e
 
+
 function usage() {
     if [[ -n "$1" ]]; then
         err "$1"
         err ''
     fi
     cat << _EOT_ >&2
-git-rsync v0.0.3 (adno)
+git-rsync v0.1 (adno)
 
-Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
+Usage: git rsync [-nusf] [-x <pattern>] <command> [files]
 
   Synchronize the git repository via rsync.
 
@@ -30,7 +31,7 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
 
     git config --local rsync.rsh "ssh -i <indentity_file> -l <login_name>"
 
-  To configure globally (per user), without repository specific settings use:
+  To configure globally (per user), without repository-specific settings use:
   
     git config --global rsync.remoteprefix your_remote_host:/pathprefix
     git config --global rsync.rsh "ssh -i <indentity_file> -l <login_name>"
@@ -40,39 +41,56 @@ Usage: $(basename $0) [-n] [-x <pattern>] <command> [files]
   A local rsync.remote setting overrides any rsync.remoteprefix setting.
 
   Excluded files are set automatically by .gitignore (unless individual
-  file arguments are supplied).
+  file arguments are supplied). You can also configure files to be excluded at all
+  times using rsync.exclude in local or global config, e.g.:
+  
+      git config --global rsync.exclude ".DS_Store __pycache__"
   
   If the command is "pull", the ignored files or diff/untracked files are
   queried from the remote host over SSH (which may result in an additional
   password prompt).
+  
+  Typical usage examples:
+
+      git rsync -u pull       -- pull updated files from the remote host
+      git rsync -u push       -- push updated files to the remote host
+      git rsync push X Y      -- push specific files (possibly ignored by git)
+      git rsync pull -f X Y   -- pull specific files, overwriting any newer local ones
 
 Options:
   -n, --dry-run
               Dry run.
-  -x, --exclude <pattern>
-              Exclude files matching <pattern>.
-  -s, --staged, -c, --cached
-              Push or pull added and modified files staged for commit
-              (mimicks output "git diff --cached").
   -u, --update
               Push or pull added, modified, and untracked files since the
               last commit (mimicks "git status").
+  -s, --staged, -c, --cached
+              Push or pull added and modified files staged for commit
+              (mimicks output "git diff --cached").
   -f, --force
               Force overwrite newer files. (By default files that are
               newer on the receiver are skipped during sync.)
+  -x, --exclude <pattern>
+              Exclude files matching <pattern>. (Can be used multiple times.)
 
 Arguments:
   <command>   push, pull
   [files]     Push or pull individual files instead of the whole repository.
               If directories are supplied, sync them recursively. Honors -x,
-              ignores .gitignore, and cannot be used with -d or -u.
+              rsync.exclude, ignores .gitignore, and cannot be used with -s or -u.
+
+Known issues:
+  The following (harmless) error message may appear:
+  
+      Pseudo-terminal will not be allocated because stdin is not a terminal.
 
 _EOT_
 }
 
+
 function err() {
     echo "$*" >&2
 }
+
 
 function raise() {
     if [[ $# -gt 0 ]]; then
@@ -81,11 +99,13 @@ function raise() {
     exit 1
 }
 
+
 function check_cmd() {
     if ! command -v $1 >/dev/null; then
         raise "$1 is not installed, abort."
     fi
 }
+
 
 # The following are regexes:
 SHORT_OPTS='^[hnxscuf]$'
@@ -94,87 +114,100 @@ SHORT_OPTS_WITH_ARG='^x$'
 LONG_OPTS_WITH_ARG='^--exclude$'
 CMDS='^(push|pull|ps|pl)$'
 
-# TODO parse/check options including strings of single-letter
-# function parse_args() {
-#     local opt opt_info cmd i
-#     args=()
-#     while [[ $# -gt 0 ]]; do
-#         case "$1" in
-#             --*)
-#                 if [[ "$1" =~ '=' ]]; then
-#                     opt="${1%%=*}"
-#                     if ! [[ "$opt" =~ $LONG_OPTS_WITH_ARG ]]; then
-#                         usage "Unexpected = (argument) after $opt."
-#                         exit 1
-#                     fi
-#                     args=("${args[@]}" "$opt" "${1#*=}")
-#                     shift 1
-#                 elif [[ "$1" =~ $LONG_OPTS_WITH_ARG ]]; then
-#                     if [[ $# -lt 2 ]]; then
-#                         usage "Missing argument after option $1."
-#                     fi
-#                     args=("${args[@]}" "$1" "$2")
-#                     shift 2                    
-#                 elif [[ "$1" =~ $LONG_OPTS ]]; then
-#                     args=("${args[@]}" "$1")
-#                     shift 1
-#                 else
-#                     usage "Unknown long option $1."
-#                     exit 1
-#                 fi
-#                 ;;
-#             -*)
-#                 if [[ ${#1} -gt 2 ]]; then
-#                     opt_info=" in $1"
-#                 else
-#                     opt_info=''
-#                 fi
-#                 for (( i=1; i<${#1}; i++ )); do
-#                     opt="${1:$i:1}"
-#                     echo "opt $opt"
-#                     if ! [[ "$opt" =~ $SHORT_OPTS ]]; then
-#                         usage "Unknown short option -$opt$opt_info."
-#                         exit 1
-#                     elif [[ "$opt" =~ $SHORT_OPTS_WITH_ARG ]]; then
-#                         arg="${1:$(($i+1)):1}"
-#                         if [[ -n "$arg" ]]; then
-#                             args=("${args[@]}" "-$opt" "$arg")
-#                         else
-#                             if [[ $# -lt 2 ]]; then
-#                                 usage "Missing argument after option -$opt$opt_info."
-#                                 exit 1
-#                             fi
-#                             args=("${args[@]}" "-$opt" "$2")
-#                             shift 1
-#                         fi
-#                         break
-#                     else
-#                         echo "args += opt $opt"
-#                         args=("${args[@]}" "-$opt")
-#                     fi
-#                 done
-#                 shift 1
-#                 ;;
-#             *)
-#                 # Ensure the first non-option arguments is a command:
-#                 if [[ -z "$cmd" ]]; then
-#                     if ! [[ "$1" =~ $CMDS ]]; then
-#                         usage "Invalid command $1."
-#                         exit 1
-#                     fi
-#                     cmd="$1"
-#                 fi
-#                 args=("${args[@]}" "$1")
-#                 shift 1
-#                 ;;
-#         esac
-#     done
-# }
-
 
 function parse_args() {
-    argc=0
-    argv=()
+    local opt opt_info i end_of_opts
+    args_opts=()
+    args_cmd=''
+    args_filenames=()
+    while [[ $# -gt 0 ]]; do
+    	if [[ -z "$end_of_options" ]]; then
+			case "$1" in
+				--)
+					end_of_options=1
+					shift 1
+					continue
+					;;
+				--*)
+					if [[ "$1" =~ '=' ]]; then
+						opt="${1%%=*}"
+						if ! [[ "$opt" =~ $LONG_OPTS_WITH_ARG ]]; then
+							usage "Unexpected = (argument) after $opt."
+							raise
+						fi
+						args_opts=("${args_opts[@]}" "$opt" "${1#*=}")
+						shift 1
+					elif [[ "$1" =~ $LONG_OPTS_WITH_ARG ]]; then
+						if [[ $# -lt 2 ]]; then
+							usage "Missing argument after option $1."
+                            raise
+						fi
+						args_opts=("${args_opts[@]}" "$1" "$2")
+						shift 2                    
+					elif [[ "$1" =~ $LONG_OPTS ]]; then
+						args_opts=("${args_opts[@]}" "$1")
+						shift 1
+					else
+						usage "Unknown long option $1."
+						raise
+					fi
+					continue
+					;;
+				-*)
+					if [[ ${#1} -gt 2 ]]; then
+						opt_info=" in $1"
+					else
+						opt_info=''
+					fi
+					for (( i=1; i<${#1}; i++ )); do
+						opt="${1:$i:1}"
+						if ! [[ "$opt" =~ $SHORT_OPTS ]]; then
+							usage "Unknown short option -$opt$opt_info."
+							raise
+						elif [[ "$opt" =~ $SHORT_OPTS_WITH_ARG ]]; then
+							arg="${1:$(($i+1)):1}"
+							if [[ -n "$arg" ]]; then
+								args_opts=("${args_opts[@]}" "-$opt" "$arg")
+							else
+								if [[ $# -lt 2 ]]; then
+									usage "Missing argument after option -$opt$opt_info."
+									raise
+								fi
+								args_opts=("${args_opts[@]}" "-$opt" "$2")
+								shift 1
+							fi
+							break
+						else
+							args_opts=("${args_opts[@]}" "-$opt")
+						fi
+					done
+					shift 1
+					continue
+					;;
+			esac
+		fi
+		# Either end_of_options=1 or unmatched case (not an option):
+		
+		# Ensure the first non-option argument is a command:
+		if [[ -z "$args_cmd" ]]; then
+			if ! [[ "$1" =~ $CMDS ]]; then
+				usage "Invalid command $1."
+				raise
+			fi
+			args_cmd="$1"
+		else
+			args_filenames=("${args_filenames[@]}" "$1")
+		fi
+			shift 1
+    done
+    if [[ -z "$args_cmd" ]]; then
+		usage "Missing command."
+        raise
+	fi
+}
+
+
+function set_opts() {
     excludes=()
     u_opt='u'
     while [[ $# -gt 0 ]]; do
@@ -212,40 +245,36 @@ function parse_args() {
                         shift
                         ;;
                     *)
-                        usage "Unknown option $1."
-                        exit 1
+                        raise "Internal error: unknown parsed option: $1"
                         ;;
                 esac
                 ;;
             *)
-                ((++argc))
-                argv=("${argv[@]}" "$1")
-                shift
+                raise "Internal error: unexpected non-option after parsing: $1"
                 ;;
         esac
     done
-
-    if [[ $argc -lt 1 ]]; then
-        usage
-        raise
-    fi
 }
+
 
 function clear_files_or_excl_file() {
     rm -f "$files_or_excl_file"
 }
 
+
 # Just unlikely strings that we use to delimit remote command output:
 OUT_START='__git-rsync-remote-output-start-66334fff74fe1acf081ab594a331f86a__'
 OUT_END='__git-rsync-remote-output-end-66334fff74fe1acf081ab594a331f86a__'
+
 
 function main() {
     check_cmd git
     check_cmd rsync
 
     parse_args "$@"
+    set_opts "${args_opts[@]}"
 
-    local mode src dst workdir remote_path remote_host remote_dir rsh \
+    local src dst workdir remote_path remote_host remote_dir rsh \
         ssh_cmd file_opt get_excl_cmd get_files_cmd get_f recursive
 
     function remote_eval() {
@@ -263,8 +292,6 @@ echo "$OUT_END"
 _EOT_
     }
 
-    mode="${argv[0]}"
-    unset argv[0]
     workdir="$(git rev-parse --show-toplevel)" || raise "Cannot get workdir."
     if remote_path="$(git config --local --get rsync.remote)"; then
         # Safety check:
@@ -286,7 +313,11 @@ _EOT_
         repo_name="${workdir##*/}"
         remote_path="${remote_prefix}/${repo_name}"
     fi
-    
+    if config_excludes="$(git config --get rsync.exclude)"; then
+        for x in $config_excludes; do
+            excludes=("${excludes[@]}" "--exclude=$x")
+        done
+    fi
     
     get_files_cmd="git status --porcelain | sed -Ene 's/^($diff) //p'"    
     get_excl_cmd="git -C \"$workdir\" ls-files \
@@ -296,7 +327,7 @@ _EOT_
     if rsh="$(git config --get rsync.rsh)"; then
         export RSYNC_RSH="$rsh"
     fi
-    case $mode in
+    case "$args_cmd" in
         push | ps )
             src="$workdir"
             dst="$remote_path"
@@ -327,19 +358,18 @@ _EOT_
             fi
             ;;
         * )
-            usage
-            raise
+            raise "Internal error: unknown parsed command: $args_cmd"
             ;;
     esac
     
     
-    if [[ "${#argv[@]}" != 0 ]]; then
+    if [[ "${#args_filenames[@]}" != 0 ]]; then
         if [[ -n "$get_f" ]]; then
             raise "Cannot use --staged/--update together with filename arguments for \
 push|pull."
         fi
         function get_files() {
-            for f in "${argv[@]}"; do
+            for f in "${args_filenames[@]}"; do
                 echo "$f"
             done
         }                
